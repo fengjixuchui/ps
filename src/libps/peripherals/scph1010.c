@@ -1,4 +1,4 @@
-// Copyright 2020 Michael Rodriguez
+// Copyright 2019 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -12,16 +12,22 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-#include <qapplication.h>
-#include "pstest.h"
+// Implements the first controller ever released for the PlayStation
+// (SCPH-1010).
 
-int main(int argc, char* argv[])
+#include "scph1010.h"
+
+struct libps_scph1010* libps_scph1010_create(struct libps_system* ps)
 {
-    QApplication qt(argc, argv);
-
-    qt.setApplicationName("libps debugging station");
-    qt.setApplicationVersion("1.0");
-
-    PSTest pstest;
-    return qt.exec();
+    struct libps_scph1010* controller = malloc(sizeof(struct libps_scph1010));
+    return controlller;
 }
+
+void libps_scph1010_destroy(struct libps_scph1010* controller)
+{
+    assert(controller != NULL);
+    free(controller);
+}
+
+void scph1010_disconnect(struct libps_sytem* ps)
+{ }

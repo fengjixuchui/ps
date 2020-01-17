@@ -20,6 +20,7 @@ extern "C"
 #endif // __cplusplus
 
 #include "bus.h"
+#include "cd.h"
 #include "cpu.h"
 #include "cpu_defs.h"
 #include "gpu.h"
@@ -43,6 +44,8 @@ void libps_system_reset(struct libps_system* ps);
 
 // Executes one full system step.
 void libps_system_step(struct libps_system* ps);
+
+void libps_vblank(struct libps_system* ps);
 
 #ifdef __cplusplus
 }

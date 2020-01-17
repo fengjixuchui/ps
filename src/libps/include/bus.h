@@ -22,6 +22,8 @@ extern "C"
 #include <stdint.h>
 
 struct libps_gpu;
+struct libps_cdrom;
+struct libps_timer;
 
 struct libps_dma_channel
 {
@@ -55,8 +57,17 @@ struct libps_bus
     // 0x1F8010F4 - DMA Interrupt Register (R/W)
     uint32_t dicr;
 
+    // 0x1F802041 - POST - External 7 - segment Display (W)
+    uint32_t post_status;
+
     // GPU instance
     struct libps_gpu* gpu;
+
+    // CD-ROM instance
+    struct libps_cdrom* cdrom;
+
+    // Timer instance
+    struct libps_timer* timer;
 
     // DMA channel 2 - GPU (lists + image data)
     struct libps_dma_channel dma_gpu_channel;
@@ -83,28 +94,28 @@ void libps_bus_reset(struct libps_bus* bus);
 // Handles DMA requests.
 void libps_bus_step(struct libps_bus* bus);
 
-// Returns a word from memory referenced by physical address `paddr`.
-uint32_t libps_bus_load_word(struct libps_bus* bus, const uint32_t paddr);
+// Returns a word from memory referenced by virtual address `vaddr`.
+uint32_t libps_bus_load_word(struct libps_bus* bus, const uint32_t vaddr);
 
-// Returns a halfword from memory referenced by physical address `paddr`.
-uint16_t libps_bus_load_halfword(struct libps_bus* bus, const uint32_t paddr);
+// Returns a halfword from memory referenced by virtual address `vaddr`.
+uint16_t libps_bus_load_halfword(struct libps_bus* bus, const uint32_t vaddr);
 
-// Returns a byte from memory referenced by physical address `paddr`.
-uint8_t libps_bus_load_byte(struct libps_bus* bus, const uint32_t paddr);
+// Returns a byte from memory referenced by virtual address `vaddr`.
+uint8_t libps_bus_load_byte(struct libps_bus* bus, const uint32_t vaddr);
 
-// Stores word `data` into memory referenced by phsyical address `paddr`.
+// Stores word `data` into memory referenced by virtual address `vaddr`.
 void libps_bus_store_word(struct libps_bus* bus,
-                          const uint32_t paddr,
+                          const uint32_t vaddr,
                           const uint32_t data);
 
-// Stores halfword `data` into memory referenced by phsyical address `paddr`.
+// Stores halfword `data` into memory referenced by virtual address `vaddr`.
 void libps_bus_store_halfword(struct libps_bus* bus,
-                              const uint32_t paddr,
+                              const uint32_t vaddr,
                               const uint16_t data);
 
-// Stores byte `data` into memory referenced by phsyical address `paddr`.
+// Stores byte `data` into memory referenced by virtual address `vaddr`.
 void libps_bus_store_byte(struct libps_bus* bus,
-                          const uint32_t paddr,
+                          const uint32_t vaddr,
                           const uint8_t data);
 
 #ifdef __cplusplus
