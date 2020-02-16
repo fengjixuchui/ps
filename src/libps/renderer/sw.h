@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -14,13 +14,22 @@
 
 #pragma once
 
-struct libps_system;
+#ifdef __cplusplus
+extern "C"
+{
+#endif // __cplusplus
 
-struct libps_scph1010
-{ };
+struct libps_gpu;
+struct libps_gpu_vertex;
 
-// Creates a SCPH-1010.
-struct libps_scph1010* libps_scph1010_create(struct libps_system* ps);
+void libps_renderer_sw_draw_polygon(struct libps_gpu* gpu,
+                                    const struct libps_gpu_vertex* const v0,
+                                    struct libps_gpu_vertex* const v1,
+                                    struct libps_gpu_vertex* const v2);
 
-// Destroys the SCPH-1010.
-void libps_scph1010_destroy(struct libps_scph1010* controller);
+void libps_renderer_sw_draw_rect(struct libps_gpu* gpu,
+                                 const struct libps_gpu_vertex* const vertex);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus

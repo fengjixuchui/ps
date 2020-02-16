@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -14,26 +14,16 @@
 
 #pragma once
 
-#ifdef LIBPS_DEBUG
+#include <QtWidgets>
 
-#ifdef __cplusplus
-extern "C"
+class CPUDebugger : public QMainWindow
 {
-#endif // __cplusplus
+	Q_OBJECT
 
-#include <stdint.h>
+public:
+	CPUDebugger();
+	~CPUDebugger();
 
-// Maximum possible length of a result from `libps_disassemble_instruction()`.
-#define LIBPS_DISASM_MAX_LENGTH 30
-
-// Converts `instruction` to MIPS-I assembly language, and stores this result
-// in `result`. `pc` is required so as to compute a proper branch target in the
-// event `instruction` is a branch instruction.
-void libps_disassemble_instruction(const uint32_t instruction,
-                                   const uint32_t pc,
-                                   char* result);
-#ifdef __cplusplus
-}
-#endif // __cplusplus
-
-#endif // LIBPS_DEBUG
+private:
+	QGroupBox* disassembly_group;
+};

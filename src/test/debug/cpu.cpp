@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -12,15 +12,11 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-#pragma once
+#include "cpu.h"
 
-struct libps_system;
+CPUDebugger::CPUDebugger() : disassembly_group(new QGroupBox(tr("Disassembly"), this))
+{ }
 
-struct libps_scph1010
-{ };
+CPUDebugger::~CPUDebugger()
+{ }
 
-// Creates a SCPH-1010.
-struct libps_scph1010* libps_scph1010_create(struct libps_system* ps);
-
-// Destroys the SCPH-1010.
-void libps_scph1010_destroy(struct libps_scph1010* controller);

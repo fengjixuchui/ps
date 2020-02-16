@@ -12,30 +12,43 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-#include <assert.h>
-#include <stdlib.h>
-#include "sched.h"
+#pragma once
 
-struct libps_scheduler* libps_scheduler_create(void)
+#include <QtWidgets>
+
+class MessageLogger : public QMainWindow
 {
-    struct libps_scheduler* sched = malloc(sizeof(struct libps_scheduler));
-    return sched;
-}
+    Q_OBJECT
 
-void libps_scheduler_destroy(struct libps_scheduler* sched)
-{
-    assert(sched != NULL);
-    free(sched);
-}
+public:
+    MessageLogger(QWidget* parent);
+    ~MessageLogger();
 
-void libps_scheduler_run(struct libps_scheduler* sched)
-{
-    assert(sched != NULL);
-}
+    void append(const QString& data);
+    void reset();
 
-void libps_scheduler_add(struct libps_scheduler* sched,
-                         const unsigned int cycles,
-                         void (*cb)(void))
-{
+    QAction* tty_strings;
+    QAction* bios_calls;
+#ifdef LIBPS_DEBUG
+    QAction* unknown_memory_load;
+    QAction* unknown_memory_store;
+    QAction* irqs;
+#endif
 
-}
+private:
+    void on_select_font();
+    void on_save_log();
+
+    // Name of the logger
+    QString name;
+
+    QMenu* file_menu;
+    QAction* save_log;
+
+    QMenu* view_menu;
+    QAction* select_font;
+    QAction* clear_log;
+
+    QMenu* events_menu;
+    QPlainTextEdit* text_edit;
+};

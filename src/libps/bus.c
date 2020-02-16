@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -17,9 +17,9 @@
 #include <string.h>
 #include "bus.h"
 #include "cd.h"
-#include "event.h"
 #include "gpu.h"
-#include "timer.h"
+#include "rcnt.h"
+#include "utility/memory.h"
 
 // `libps_bus` doesn't need to know about this, since the operator of the
 // library has the BIOS data loaded already and no other part of the system
@@ -95,6 +95,10 @@ static void dma_gpu_linked_list_process(struct libps_bus* bus)
         }
 
         // Break the loop if the end of list marker has been reached
+        //
+        // XXX: In a debugging/testing setting this might be dangerous; there
+        // is no way to guarantee that the end of list marker is actually
+        // *there*. If it's not there, this loop will never exit.
         if (header & 0x00800000)
         {
             break;
@@ -117,8 +121,6 @@ static void dma_otc_process(struct libps_bus* bus)
 
     if (bus->dma_otc_channel.chcr != 0x11000002)
     {
-        libps_ev_dma_otc_unknown(bus->dma_otc_channel.chcr);
-
         bus->dma_otc_channel.chcr &= ~(1 << 24);
         return;
     }
@@ -140,53 +142,58 @@ static void dma_otc_process(struct libps_bus* bus)
     bus->dma_otc_channel.chcr &= ~(1 << 24);
 }
 
-// Allocates memory for a `libps_bus` structure and returns a pointer to it if
-// memory allocation was successful, or `NULL` otherwise. This function should
-// not be called anywhere other than `libps_system_create()`.
+// Creates the system bus. The system bus is the interconnect between the CPU
+// and devices, and accordingly has primary ownership of devices. The system
+// bus does not directly know about the CPU, however.
 //
-// `bios_data_ptr` should be a pointer to BIOS data, passed by
-// `libps_system_create()`.
-__attribute__((warn_unused_result))
+// `bios_data_ptr` is a pointer to the BIOS data loaded by the caller, passed
+// by `libps_system_create()`.
+//
+// Do not call this function directly.
 struct libps_bus* libps_bus_create(uint8_t* const bios_data_ptr)
 {
-    struct libps_bus* bus = malloc(sizeof(struct libps_bus));
+    struct libps_bus* bus = libps_safe_malloc(sizeof(struct libps_bus));
 
-    if (bus)
-    {
-        bios = bios_data_ptr;
+    bios = bios_data_ptr;
 
-        // XXX: This will fail on some systems (ironically, the PlayStation).
-        // It may be better to consider using `realloc()` after a certain
-        // amount of emulated RAM has been used. The initial safe "certain
-        // amount" will have to be tested with relation to standard memory
-        // sizes on certain systems and how much RAM most PlayStation games use
-        // on average.
-        bus->ram = malloc(0x200000);
+#ifdef LIBPS_DEBUG
+    bus->debug_unknown_memory_load    = NULL;
+    bus->debug_unknown_memory_store   = NULL;
+    bus->debug_interrupt_requested    = NULL;
+    bus->debug_interrupt_acknowledged = NULL;
+#endif // LIBPS_DEBUG
 
-        bus->gpu   = libps_gpu_create();
-        bus->cdrom = libps_cdrom_create();
-        bus->timer = libps_timer_create();
+    // XXX: It might be poor forward thinking to allocate 2MB straightaway, not
+    // really okay with that. Counting the BIOS (512KB) and this, we've already
+    // used ~2.51MB. Nonsense. See notes in `libps_system_create()`.
+    //
+    // Only thing I can think of to counteract this is to use `realloc()`
+    // whenever the emulated RAM exceeds a runtime specified threshold, but for
+    // now it doesn't matter. It may not matter period, we'll see.
+    bus->ram = libps_safe_malloc(0x200000);
 
-        return bus;
-    }
-    return NULL;
+    bus->gpu   = libps_gpu_create();
+    bus->cdrom = libps_cdrom_create();
+    bus->rcnt  = libps_rcnt_create();
+
+    return bus;
 }
 
-// Deallocates memory held by `bus`. This function should not be called
-// anywhere other than `libps_system_destroy()`.
+// Destroys the system bus, destroying all memory and devices. Please note that
+// connected peripherals WILL NOT BE DESTROYED with this function; refer to the
+// peripherals' own destroy functions and use them accordingly.
 void libps_bus_destroy(struct libps_bus* bus)
 {
-    assert(bus != NULL);
-
     libps_gpu_destroy(bus->gpu);
     libps_cdrom_destroy(bus->cdrom);
-    libps_timer_destroy(bus->timer);
+    libps_rcnt_destroy(bus->rcnt);
 
-    free(bus->ram);
-    free(bus);
+    libps_safe_free(bus->ram);
+    libps_safe_free(bus);
 }
 
-// Resets the system bus, which resets the peripherals to their startup state.
+// Resets the system bus, which resets the peripherals to their startup state
+// and clears memory.
 void libps_bus_reset(struct libps_bus* bus)
 {
     assert(bus != NULL);
@@ -197,13 +204,13 @@ void libps_bus_reset(struct libps_bus* bus)
     bus->i_stat = 0x00000000;
     bus->i_mask = 0x00000000;
 
-    memset(bus->ram, 0, sizeof(uint8_t) * 0x200000);
+    memset(bus->ram,              0, sizeof(uint8_t) * 0x200000);
     memset(&bus->dma_gpu_channel, 0, sizeof(bus->dma_gpu_channel));
     memset(&bus->dma_otc_channel, 0, sizeof(bus->dma_otc_channel));
 
     libps_gpu_reset(bus->gpu);
     libps_cdrom_reset(bus->cdrom);
-    libps_timer_reset(bus->timer);
+    libps_rcnt_reset(bus->rcnt);
 }
 
 // Handles DMA requests.
@@ -258,11 +265,19 @@ void libps_bus_step(struct libps_bus* bus)
     if (bus->cdrom->fire_interrupt)
     {
         bus->cdrom->fire_interrupt = false;
-        bus->i_stat |= (1 << 2);
+        bus->i_stat |= LIBPS_IRQ_CDROM;
+
+#ifdef LIBPS_DEBUG
+        if (bus->debug_interrupt_requested)
+        {
+            bus->debug_interrupt_requested(bus->debug_user_data,
+                                           2);
+        }
+#endif // LIBPS_DEBUG
     }
 
     libps_cdrom_step(bus->cdrom);
-    libps_timer_step(bus->timer);
+    libps_rcnt_step(bus->rcnt);
 }
 
 // Returns a word from memory referenced by virtual address `vaddr`.
@@ -318,7 +333,7 @@ uint32_t libps_bus_load_word(struct libps_bus* bus, const uint32_t vaddr)
 
                         // 0x1F801110 - Timer 1 Counter Value (R/W)
                         case 0x110:
-                            return bus->timer->timers[1].value;
+                            return bus->rcnt->rcnts[1].value;
 
                         // 0x1F801810 - Read responses to GP0(C0h) and GP1(10h)
                         // commands
@@ -330,13 +345,25 @@ uint32_t libps_bus_load_word(struct libps_bus* bus, const uint32_t vaddr)
                             return 0x1FF00000;
 
                         default:
-                            libps_ev_unknown_word_load(paddr);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_load)
+                            {
+                                bus->debug_unknown_memory_load
+                                (bus->debug_user_data, paddr, LIBPS_DEBUG_WORD);
+                            }
+#endif // LIBPS_DEBUG
                             return 0x00000000;
                     }
                     break;
 
                 default:
-                    libps_ev_unknown_word_load(paddr);
+#ifdef LIBPS_DEBUG
+                    if (bus->debug_unknown_memory_load)
+                    {
+                        bus->debug_unknown_memory_load
+                        (bus->debug_user_data, paddr, LIBPS_DEBUG_WORD);
+                    }
+#endif // LIBPS_DEBUG
                     return 0x00000000;
             }
             break;
@@ -345,7 +372,13 @@ uint32_t libps_bus_load_word(struct libps_bus* bus, const uint32_t vaddr)
             return *(uint32_t *)(bios + (paddr & 0x000FFFFF));
 
         default:
-            libps_ev_unknown_word_load(paddr);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_load)
+            {
+                bus->debug_unknown_memory_load
+                (bus->debug_user_data, paddr, LIBPS_DEBUG_WORD);
+            }
+#endif // LIBPS_DEBUG
             return 0x00000000;
     }
 }
@@ -379,6 +412,10 @@ uint16_t libps_bus_load_halfword(struct libps_bus* bus, const uint32_t vaddr)
                         case 0x044:
                             return 0xFFFF;
 
+                        // 1F80104Ah JOY_CTRL(R / W) (usually 1003h, 3003h, 0000h)
+                        case 0x04A:
+                            return bus->joy_ctrl;
+
                         // 0x1F801070 - I_STAT - Interrupt status register
                         // (R=Status, W=Acknowledge)
                         case 0x070:
@@ -390,22 +427,40 @@ uint16_t libps_bus_load_halfword(struct libps_bus* bus, const uint32_t vaddr)
 
                         // 0x1F801120 - Timer 2 (1/8 system clock) value
                         case 0x120:
-                            return bus->timer->timers[2].value & 0x0000FFFF;
+                            return bus->rcnt->rcnts[2].value & 0x0000FFFF;
 
                         default:
-                            libps_ev_unknown_halfword_load(paddr);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_load)
+                            {
+                                bus->debug_unknown_memory_load
+                                (bus->debug_user_data, paddr, LIBPS_DEBUG_HALFWORD);
+                            }
+#endif // LIBPS_DEBUG
                             return 0x0000;
                     }
                     break;
 
                 default:
-                    libps_ev_unknown_halfword_load(paddr);
+#ifdef LIBPS_DEBUG
+                    if (bus->debug_unknown_memory_load)
+                    {
+                        bus->debug_unknown_memory_load
+                        (bus->debug_user_data, paddr, LIBPS_DEBUG_HALFWORD);
+                    }
+#endif // LIBPS_DEBUG
                     return 0x0000;
             }
             break;
 
         default:
-            libps_ev_unknown_halfword_load(paddr);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_load)
+            {
+                bus->debug_unknown_memory_load
+                (bus->debug_user_data, paddr, LIBPS_DEBUG_HALFWORD);
+            }
+#endif // LIBPS_DEBUG
             return 0x0000;
     }
 }
@@ -437,6 +492,10 @@ uint8_t libps_bus_load_byte(struct libps_bus* bus, const uint32_t vaddr)
                 case 0x1:
                     switch (paddr & 0x00000FFF)
                     {
+                        // 0x1F801040 - JOY_RX_DATA (R)
+                        case 0x040:
+                            return 0x01;
+
                         // 0x1F801800 - Index/Status Register (Bit0-1 R/W) (Bit2-7 Read Only)
                         case 0x800:
                             return bus->cdrom->status;
@@ -450,13 +509,25 @@ uint8_t libps_bus_load_byte(struct libps_bus* bus, const uint32_t vaddr)
                             return libps_cdrom_indexed_register_load(bus->cdrom, 3);
 
                         default:
-                            libps_ev_unknown_byte_load(paddr);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_load)
+                            {
+                                bus->debug_unknown_memory_load
+                                (bus->debug_user_data, paddr, LIBPS_DEBUG_BYTE);
+                            }
+#endif // LIBPS_DEBUG
                             return 0x00;
                     }
                     break;
 
                 default:
-                    libps_ev_unknown_byte_load(paddr);
+#ifdef LIBPS_DEBUG
+                    if (bus->debug_unknown_memory_load)
+                    {
+                        bus->debug_unknown_memory_load
+                        (bus->debug_user_data, paddr, LIBPS_DEBUG_BYTE);
+                    }
+#endif // LIBPS_DEBUG
                     return 0x00;
             }
             break;
@@ -465,7 +536,13 @@ uint8_t libps_bus_load_byte(struct libps_bus* bus, const uint32_t vaddr)
             return *(uint8_t *)(bios + (paddr & 0x000FFFFF));
 
         default:
-            libps_ev_unknown_byte_load(paddr);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_load)
+            {
+                bus->debug_unknown_memory_load
+                (bus->debug_user_data, paddr, LIBPS_DEBUG_BYTE);
+            }
+#endif // LIBPS_DEBUG
             return 0x00;
     }
 }
@@ -503,6 +580,19 @@ void libps_bus_store_word(struct libps_bus* bus,
                         // 0x1F801070 - I_STAT - Interrupt status register
                         // (R=Status, W=Acknowledge)
                         case 0x070:
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_interrupt_acknowledged)
+                            {
+                                for (unsigned int bit = 0; bit < 11; ++bit)
+                                {
+                                    if ((bus->i_stat & (1 << bit)) &&
+                                        !(data & (1 << bit)))
+                                    {
+                                        bus->debug_interrupt_acknowledged(bus->debug_user_data, bit);
+                                    }
+                                }
+                            }
+#endif // LIBPS_DEBUG
                             bus->i_stat &= data;
                             break;
 
@@ -553,12 +643,12 @@ void libps_bus_store_word(struct libps_bus* bus,
 
                         // 0x1F801114 - Timer 1 Counter Mode (R/W)
                         case 0x114:
-                            libps_timer_set_mode(bus->timer, 1, data);
+                            libps_rcnt_set_mode(bus->rcnt, 1, data);
                             break;
 
                         // 0x1F801118 - Timer 1 Counter Target Value (R/W)
                         case 0x118:
-                            bus->timer->timers[1].target = data;
+                            bus->rcnt->rcnts[1].target = data;
                             break;
 
                         // 0x1F801810 - GP0 Commands/Packets (Rendering and
@@ -573,7 +663,13 @@ void libps_bus_store_word(struct libps_bus* bus,
                             break;
 
                         default:
-                            libps_ev_unknown_word_store(paddr, data);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_store)
+                            {
+                                bus->debug_unknown_memory_store
+                                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_WORD);
+                            }
+#endif // LIBPS_DEBUG
                             break;
                     }
                     break;
@@ -581,7 +677,13 @@ void libps_bus_store_word(struct libps_bus* bus,
             break;
 
         default:
-            libps_ev_unknown_word_store(paddr, data);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_store)
+            {
+                bus->debug_unknown_memory_store
+                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_WORD);
+            }
+#endif // LIBPS_DEBUG
             break;
     }
 }
@@ -618,6 +720,11 @@ void libps_bus_store_halfword(struct libps_bus* bus,
                 case 0x1:
                     switch (paddr & 0x00000FFF)
                     {
+                        // 1F80104Ah JOY_CTRL(R / W) (usually 1003h, 3003h, 0000h)
+                        case 0x04A:
+                            bus->joy_ctrl = data;
+                            break;
+
                         // 0x1F801070 - I_STAT - Interrupt status register
                         // (R=Status, W=Acknowledge)
                         case 0x070:
@@ -631,63 +738,81 @@ void libps_bus_store_halfword(struct libps_bus* bus,
 
                         // 0x1F801100 - Timer 0 Counter Value (R/W)
                         case 0x100:
-                            bus->timer->timers[0].value = data;
+                            bus->rcnt->rcnts[0].value = data;
                             break;
 
                         // 0x1F801104 - Timer 0 Counter Mode (R/W)
                         case 0x104:
-                            libps_timer_set_mode(bus->timer, 0, data);
+                            libps_rcnt_set_mode(bus->rcnt, 0, data);
                             break;
 
                         // 0x1F801108 - Timer 0 Counter Target Value (R/W)
                         case 0x108:
-                            bus->timer->timers[0].target = data;
+                            bus->rcnt->rcnts[0].target = data;
                             break;
 
                         // 0x1F801110 - Timer 1 Counter Value (R/W)
                         case 0x110:
-                            bus->timer->timers[1].value = data;
+                            bus->rcnt->rcnts[1].value = data;
                             break;
 
                         // 0x1F801114 - Timer 1 Counter Mode (R/W)
                         case 0x114:
-                            libps_timer_set_mode(bus->timer, 1, data);
+                            libps_rcnt_set_mode(bus->rcnt, 1, data);
                             break;
 
                         // 0x1F801118 - Timer 1 Counter Target Value (R/W)
                         case 0x118:
-                            bus->timer->timers[1].target = data;
+                            bus->rcnt->rcnts[1].target = data;
                             break;
 
                         // 0x1F801120 - Timer 2 Counter Value (R/W)
                         case 0x120:
-                            bus->timer->timers[2].value = data;
+                            bus->rcnt->rcnts[2].value = data;
                             break;
 
                         // 0x1F801124 - Timer 2 Counter Mode (R/W)
                         case 0x124:
-                            libps_timer_set_mode(bus->timer, 2, data);
+                            libps_rcnt_set_mode(bus->rcnt, 2, data);
                             break;
 
                         // 0x1F801128 - Timer 2 Counter Target Value (R/W)
                         case 0x128:
-                            bus->timer->timers[2].target = data;
+                            bus->rcnt->rcnts[2].target = data;
                             break;
 
                         default:
-                            libps_ev_unknown_halfword_store(paddr, data);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_store)
+                            {
+                                bus->debug_unknown_memory_store
+                                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_HALFWORD);
+                            }
+#endif // LIBPS_DEBUG
                             break;
                     }
                     break;
 
                 default:
-                    libps_ev_unknown_halfword_store(paddr, data);
+#ifdef LIBPS_DEBUG
+                    if (bus->debug_unknown_memory_store)
+                    {
+                        bus->debug_unknown_memory_store
+                        (bus->debug_user_data, paddr, data, LIBPS_DEBUG_HALFWORD);
+                    }
+#endif // LIBPS_DEBUG
                     break;
             }
             break;
 
         default:
-            libps_ev_unknown_halfword_store(paddr, data);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_store)
+            {
+                bus->debug_unknown_memory_store
+                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_HALFWORD);
+            }
+#endif // LIBPS_DEBUG
             break;
     }
 }
@@ -753,19 +878,37 @@ void libps_bus_store_byte(struct libps_bus* bus,
                             break;
 
                         default:
-                            libps_ev_unknown_byte_store(paddr, data);
+#ifdef LIBPS_DEBUG
+                            if (bus->debug_unknown_memory_store)
+                            {
+                                bus->debug_unknown_memory_store
+                                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_BYTE);
+                            }
+#endif // LIBPS_DEBUG
                             break;
                     }
                     break;
 
                 default:
-                    libps_ev_unknown_byte_store(paddr, data);
+#ifdef LIBPS_DEBUG
+                    if (bus->debug_unknown_memory_store)
+                    {
+                        bus->debug_unknown_memory_store
+                        (bus->debug_user_data, paddr, data, LIBPS_DEBUG_BYTE);
+                    }
+#endif // LIBPS_DEBUG
                     break;
             }
             break;
 
         default:
-            libps_ev_unknown_byte_store(paddr, data);
+#ifdef LIBPS_DEBUG
+            if (bus->debug_unknown_memory_store)
+            {
+                bus->debug_unknown_memory_store
+                (bus->debug_user_data, paddr, data, LIBPS_DEBUG_BYTE);
+            }
+#endif // LIBPS_DEBUG
             break;
     }
 }

@@ -22,16 +22,16 @@ MainWindow::MainWindow()
     vram_image_view = new QLabel(this);
     vram_image_view->setPixmap(QPixmap::fromImage(*vram_image));
 
-    open_ps_exe = new QAction(tr("Inject PS-X EXE..."), this);
-
-    connect(open_ps_exe, &QAction::triggered, this, &MainWindow::on_open_ps_exe);
-
-    open_tty_log = new QAction(tr("Display TTY Log"), this);
-
-    bios_calls = new QAction(tr("BIOS calls"), this);
-
     file_menu = menuBar()->addMenu(tr("&File"));
-    file_menu->addAction(open_ps_exe);
+
+    inject_ps_exe = new QAction(tr("Inject PS-X EXE..."), this);
+
+    connect(inject_ps_exe,
+            &QAction::triggered,
+            this,
+            &MainWindow::on_inject_ps_exe);
+
+    file_menu->addAction(inject_ps_exe);
 
     emulation_menu = menuBar()->addMenu(tr("&Emulation"));
 
@@ -40,17 +40,15 @@ MainWindow::MainWindow()
     pause_emu = new QAction(tr("Pause"), this);
     reset_emu = new QAction(tr("Reset"), this);
 
-    // The emulator is already running when we get here
-    start_emu->setDisabled(true);
-
     emulation_menu->addAction(start_emu);
     emulation_menu->addAction(stop_emu);
     emulation_menu->addAction(pause_emu);
     emulation_menu->addAction(reset_emu);
 
     debug_menu = menuBar()->addMenu(tr("&Debug"));
-    debug_menu->addAction(open_tty_log);
-    debug_menu->addAction(bios_calls);
+
+    display_libps_log = new QAction(tr("Display libps log"), this);
+    debug_menu->addAction(display_libps_log);
 
     setWindowFlags(Qt::MSWindowsFixedSizeDialogHint);
     setCentralWidget(vram_image_view);
@@ -59,16 +57,17 @@ MainWindow::MainWindow()
 MainWindow::~MainWindow()
 { }
 
-void MainWindow::on_open_ps_exe()
+// Called when the user triggers "File -> Inject PS-X EXE..."
+void MainWindow::on_inject_ps_exe()
 {
     QString file_name = QFileDialog::getOpenFileName(this,
                                                      tr("Select PS-X EXE"),
                                                      "",
-                                                     tr("PlayStation EXEs (*.exe)"));
+                                                     tr("PS-X EXEs (*.exe)"));
 
     if (!file_name.isEmpty())
     {
-        emit inject_ps_exe(file_name);
+        emit selected_ps_x_exe(file_name);
     }
 }
 
@@ -76,7 +75,9 @@ void MainWindow::on_open_ps_exe()
 void MainWindow::render_frame(const uint16_t* vram)
 {
     memcpy(vram_image->bits(), vram, vram_image->sizeInBytes());
-    auto img = vram_image->rgbSwapped();
+
+    // This is seriously awful.
+    QImage img = vram_image->rgbSwapped();
 
     vram_image_view->setPixmap(QPixmap::fromImage(img));
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -14,13 +14,15 @@
 
 #pragma once
 
-struct libps_system;
+#include <QtWidgets>
 
-struct libps_scph1010
-{ };
+class GPUDebugger : public QWidget
+{
+    Q_OBJECT
 
-// Creates a SCPH-1010.
-struct libps_scph1010* libps_scph1010_create(struct libps_system* ps);
+public:
+    GPUDebugger() noexcept;
+    ~GPUDebugger() noexcept;
 
-// Destroys the SCPH-1010.
-void libps_scph1010_destroy(struct libps_scph1010* controller);
+    void refresh() noexcept;
+};

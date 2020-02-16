@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -14,13 +14,19 @@
 
 #pragma once
 
-struct libps_system;
+#ifdef __cplusplus
+extern "C"
+{
+#endif // __cplusplus
 
-struct libps_scph1010
-{ };
+// Attempts to allocate memory, and if memory allocation is successful returns
+// a pointer to the memory, or calls `abort()` if memory allocation was
+// unsuccessful.
+void* libps_safe_malloc(const size_t size);
 
-// Creates a SCPH-1010.
-struct libps_scph1010* libps_scph1010_create(struct libps_system* ps);
+// Calls `free()` and sets `ptr` to `NULL`.
+void libps_safe_free(void* ptr);
 
-// Destroys the SCPH-1010.
-void libps_scph1010_destroy(struct libps_scph1010* controller);
+#ifdef __cplusplus
+}
+#endif // __cplusplus

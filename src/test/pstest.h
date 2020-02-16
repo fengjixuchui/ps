@@ -16,7 +16,7 @@
 
 #include "emulator.h"
 #include "main_window.h"
-#include "debug/tty_log.h"
+#include "debug/log.h"
 
 class PSTest : public QObject
 {
@@ -27,20 +27,49 @@ public:
     ~PSTest();
 
 private:
-    // Returns the BIOS file to use.
-    QString handle_initial_bios_select();
-
-#ifdef LIBPS_DEBUG
+    // Called when the emulator core reports that BIOS call
+    // `A(0x40) - SystemErrorUnresolvedException()` was reached.
     void emu_report_system_error();
-#endif // LIBPS_DEBUG
 
-    void open_tty_log();
+    // Called when the emulator core reports that a BIOS call other than
+    // A(0x40), A(0x3C), or B(0x3D) was reached.
+    void emu_bios_call(struct bios_trace_info* bios_trace);
 
+    // Called when the user triggers `Debug -> Display libps log`.
+    void display_libps_log();
+
+    // Called when the user triggers `Emulation -> Start`. This function is
+    // also called upon startup, and is used also to resume emulation from a
+    // paused state.
     void start_emu();
-    void reset_emu();
+
+    // Called when the user triggers `Emulation -> Stop`.
+    void stop_emu();
+
+    // Called when the user triggers `Emulation -> Pause`.
     void pause_emu();
 
+    // Called when the user triggers `Emulation -> Reset`.
+    void reset_emu();
+
+#ifdef LIBPS_DEBUG
+    // Called when an unknown word load has been attempted
+    void on_debug_unknown_memory_load(const uint32_t paddr,
+                                      const unsigned int type);
+
+    // Called when an unknown word store has been attempted
+    void on_debug_unknown_memory_store(const uint32_t paddr,
+                                       const unsigned int data,
+                                       const unsigned int type);
+
+    void on_debug_interrupt_requested(const unsigned int interrupt);
+    void on_debug_interrupt_acknowledged(const unsigned int interrupt);
+#endif // LIBPS_DEBUG
+
+    // Called when a TTY string has been generated
+    void on_tty_string(const QString& tty_string);
+
     MainWindow* main_window;
-    TTYLogger* tty_logger;
+    MessageLogger* libps_log;
     Emulator* emulator;
 };

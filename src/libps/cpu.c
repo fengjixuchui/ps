@@ -1,4 +1,4 @@
-// Copyright 2019 Michael Rodriguez
+// Copyright 2020 Michael Rodriguez
 //
 // Permission to use, copy, modify, and/or distribute this software for any
 // purpose with or without fee is hereby granted, provided that the above
@@ -31,7 +31,7 @@
 // * There is no MMU, therefore there is no support for TLB instructions and
 //   all address translations are fixed.
 //
-// * No support for load delays. Probably will be required for games, but
+// * No support for load delays. Undoubtedly will be required for games, but
 //   apparently they don't seem to be required for the BIOS.
 
 #include <assert.h>
@@ -41,6 +41,7 @@
 #include "bus.h"
 #include "cpu.h"
 #include "cpu_defs.h"
+#include "utility/memory.h"
 
 // `libps_cpu` doesn't need to know about this.
 static struct libps_bus* bus;
@@ -49,7 +50,7 @@ static struct libps_bus* bus;
 // an address exception.
 #define UNUSED 0x00000000
 
-bool in_delay_slot = false;
+static bool in_delay_slot = false;
 
 // Throws exception `exccode`.
 static void raise_exception(struct libps_cpu* cpu,
@@ -74,7 +75,7 @@ static void raise_exception(struct libps_cpu* cpu,
     // 3a) Cause is setup so that software can see the reason for the
     //     exception.
     cpu->cop0_cpr[LIBPS_CPU_COP0_REG_CAUSE] =
-    (cpu->cop0_cpr[LIBPS_CPU_COP0_REG_CAUSE] & ~0x0000007C) |
+    (cpu->cop0_cpr[LIBPS_CPU_COP0_REG_CAUSE] & ~0xFFFF00FF) |
     (exccode << 2);
 
 #ifdef LIBPS_DEBUG
@@ -93,26 +94,18 @@ static void raise_exception(struct libps_cpu* cpu,
 // Allocates memory for a `libps_cpu` structure and returns a pointer to it if
 // memory allocation was successful, `NULL` otherwise. This function does not
 // automatically initialize initial state.
-__attribute__((warn_unused_result))
 struct libps_cpu* libps_cpu_create(struct libps_bus* b)
 {
-    struct libps_cpu* cpu = malloc(sizeof(struct libps_cpu));
+    struct libps_cpu* cpu = libps_safe_malloc(sizeof(struct libps_cpu));
+    bus = b;
 
-    if (cpu)
-    {
-        bus = b;
-        return cpu;
-    }
-    return NULL;
+    return cpu;
 }
 
 // Deallocates the memory held by `cpu`.
 void libps_cpu_destroy(struct libps_cpu* cpu)
 {
-    // `free()` doesn't care whether or not you pass a `NULL` pointer, but
-    // `cpu` should never be `NULL` by the time we get here.
-    assert(cpu != NULL);
-    free(cpu);
+    libps_safe_free(cpu);
 }
 
 // Triggers a reset exception, thereby initializing the CPU to the predefined
@@ -227,6 +220,9 @@ void libps_cpu_step(struct libps_cpu* cpu)
                 {
                     const uint32_t target =
                     cpu->gpr[LIBPS_CPU_DECODE_RS(cpu->instruction)] - 4;
+
+                    cpu->gpr[LIBPS_CPU_DECODE_RD(cpu->instruction)] =
+                    cpu->pc + 8;
 #ifdef LIBPS_DEBUG
                     if ((target & 0x00000003) != 0)
                     {
@@ -234,9 +230,6 @@ void libps_cpu_step(struct libps_cpu* cpu)
                         break;
                     }
 #endif // LIBPS_DEBUG
-                    cpu->gpr[LIBPS_CPU_DECODE_RD(cpu->instruction)] =
-                    cpu->pc + 8;
-
                     cpu->next_pc = target;
                     in_delay_slot = true;
 
@@ -471,11 +464,11 @@ void libps_cpu_step(struct libps_cpu* cpu)
 
                     break;
 
-                default:
 #ifdef LIBPS_DEBUG
+                default:
                     raise_exception(cpu, LIBPS_CPU_EXCCODE_RI, UNUSED);
-#endif // LIBPS_DEBUG
                     break;
+#endif // LIBPS_DEBUG
             }
             break;
 
@@ -647,11 +640,11 @@ void libps_cpu_step(struct libps_cpu* cpu)
 
                             break;
 
-                        default:
 #ifdef LIBPS_DEBUG
+                        default:
                             raise_exception(cpu, LIBPS_CPU_EXCCODE_RI, UNUSED);
-#endif // LIBPS_DEBUG
                             break;
+#endif // LIBPS_DEBUG
                     }
                     break;
             }
@@ -928,11 +921,11 @@ void libps_cpu_step(struct libps_cpu* cpu)
             break;
         }
 
-        default:
 #ifdef LIBPS_DEBUG
+        default:
             raise_exception(cpu, LIBPS_CPU_EXCCODE_RI, UNUSED);
-#endif // LIBPS_DEBUG
             break;
+#endif // LIBPS_DEBUG
     }
 
     cpu->instruction = libps_bus_load_word(bus, cpu->pc += 4);

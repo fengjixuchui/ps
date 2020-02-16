@@ -23,7 +23,13 @@ extern "C"
 
 struct libps_gpu;
 struct libps_cdrom;
-struct libps_timer;
+struct libps_rcnt;
+
+#ifdef LIBPS_DEBUG
+#define LIBPS_DEBUG_WORD 0xFFFFFFFF
+#define LIBPS_DEBUG_HALFWORD 0xFFFF
+#define LIBPS_DEBUG_BYTE 0xFF
+#endif // LIBPS_DEBUG
 
 struct libps_dma_channel
 {
@@ -57,32 +63,61 @@ struct libps_bus
     // 0x1F8010F4 - DMA Interrupt Register (R/W)
     uint32_t dicr;
 
+    uint16_t joy_ctrl;
+
     // GPU instance
     struct libps_gpu* gpu;
 
     // CD-ROM instance
     struct libps_cdrom* cdrom;
 
-    // Timer instance
-    struct libps_timer* timer;
+    // Root counter instance
+    struct libps_rcnt* rcnt;
 
     // DMA channel 2 - GPU (lists + image data)
     struct libps_dma_channel dma_gpu_channel;
 
     // DMA channel 6 - OTC (reverse clear OT)
     struct libps_dma_channel dma_otc_channel;
+
+#ifdef LIBPS_DEBUG
+    // If using C++, it would probably be wise to set this to `this`.
+    void* debug_user_data;
+
+    // Called when an unknown memory load has been attempted
+    void (*debug_unknown_memory_load)(void* user_data,
+                                      const uint32_t paddr,
+                                      const unsigned int type);
+
+    // Called when an unknown word store has been attempted
+    void (*debug_unknown_memory_store)(void* user_data,
+                                       const uint32_t paddr,
+                                       const unsigned int data,
+                                       const unsigned int type);
+
+    // Interrupt has been requested
+    void (*debug_interrupt_requested)(void* user_data,
+                                      const unsigned int interrupt);
+
+    // Interrupt has been acknowledged
+    void (*debug_interrupt_acknowledged)(void* user_data,
+                                         const unsigned int interrupt);
+#endif // LIBPS_DEBUG
 };
 
-// Allocates memory for a `libps_bus` structure and returns a pointer to it if
-// memory allocation was successful, or `NULL` otherwise. This function should
-// not be called anywhere other than `libps_system_create()`.
+// Creates the system bus. The system bus is the interconnect between the CPU
+// and devices, and accordingly has primary ownership of devices. The system
+// bus does not directly know about the CPU, however.
 //
-// `bios_data_ptr` should be a pointer to BIOS data, passed by
-// `libps_system_create()`.
+// `bios_data_ptr` is a pointer to the BIOS data loaded by the caller, passed
+// by `libps_system_create()`.
+//
+// Do not call this function directly.
 struct libps_bus* libps_bus_create(uint8_t* const bios_data_ptr);
 
-// Deallocates memory held by `bus`. This function should not be called
-// anywhere other than `libps_system_destroy()`.
+// Destroys the system bus, destroying all memory and devices. Please note that
+// connected peripherals WILL NOT BE DESTROYED with this function; refer to the
+// peripherals' own destroy functions and use them accordingly.
 void libps_bus_destroy(struct libps_bus* bus);
 
 // Resets the system bus, which resets the peripherals to their startup state.
