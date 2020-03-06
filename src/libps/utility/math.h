@@ -12,16 +12,15 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-#include <qapplication.h>
-#include "pstest.h"
+#pragma once
 
-int main(int argc, char* argv[])
+#ifdef __cplusplus
+extern "C"
 {
-    QApplication qt(argc, argv);
+#endif // __cplusplus
 
-    qt.setApplicationName("libps debugging station");
-    qt.setApplicationVersion("1.0");
+#define LIBPS_BCD_TO_DEC(x) x - 6 * (x >> 4)
 
-    PSTest pstest;
-    return qt.exec();
+#ifdef __cplusplus
 }
+#endif // __cplusplus

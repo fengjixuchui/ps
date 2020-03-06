@@ -24,14 +24,21 @@ MainWindow::MainWindow()
 
     file_menu = menuBar()->addMenu(tr("&File"));
 
-    inject_ps_exe = new QAction(tr("Inject PS-X EXE..."), this);
+    insert_cdrom_image = new QAction(tr("Insert CD-ROM image..."), this);
+    run_ps_exe         = new QAction(tr("Run PS-X EXE..."),        this);
 
-    connect(inject_ps_exe,
+    connect(insert_cdrom_image,
             &QAction::triggered,
             this,
-            &MainWindow::on_inject_ps_exe);
+            &MainWindow::on_insert_cdrom_image);
 
-    file_menu->addAction(inject_ps_exe);
+    connect(run_ps_exe,
+            &QAction::triggered,
+            this,
+            &MainWindow::on_run_ps_x_exe);
+
+    file_menu->addAction(insert_cdrom_image);
+    file_menu->addAction(run_ps_exe);
 
     emulation_menu = menuBar()->addMenu(tr("&Emulation"));
 
@@ -57,8 +64,22 @@ MainWindow::MainWindow()
 MainWindow::~MainWindow()
 { }
 
-// Called when the user triggers "File -> Inject PS-X EXE..."
-void MainWindow::on_inject_ps_exe()
+// Called when the user triggers "File -> Insert CD-ROM image..."
+void MainWindow::on_insert_cdrom_image()
+{
+    QString file_name = QFileDialog::getOpenFileName(this,
+                                                     tr("Select CD-ROM image"),
+                                                     "",
+                                                     tr("CD-ROM images (*.bin)"));
+
+    if (!file_name.isEmpty())
+    {
+        emit selected_cdrom_image(file_name);
+    }
+}
+
+// Called when the user triggers "File -> Run PS-X EXE..."
+void MainWindow::on_run_ps_x_exe()
 {
     QString file_name = QFileDialog::getOpenFileName(this,
                                                      tr("Select PS-X EXE"),
